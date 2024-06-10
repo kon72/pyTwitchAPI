@@ -759,7 +759,7 @@ class Chat:
                 'command': command_parts[0],
                 'channel': command_parts[1]
             }
-        elif command_parts[0] in ('PING', 'GLOBALUSERSTATE', 'RECONNECT'):
+        elif command_parts[0] in ('PING', 'PONG', 'GLOBALUSERSTATE', 'RECONNECT'):
             parsed_command = {
                 'command': command_parts[0]
             }
@@ -880,7 +880,8 @@ class Chat:
 
         self.__tasks = [
             asyncio.ensure_future(self.__task_receive(), loop=self.__socket_loop),
-            asyncio.ensure_future(self.__task_startup(), loop=self.__socket_loop)
+            asyncio.ensure_future(self.__task_startup(), loop=self.__socket_loop),
+            asyncio.ensure_future(self.__task_ping(), loop=self.__socket_loop)
         ]
         # keep loop alive
         self.__socket_loop.run_until_complete(self._keep_loop_alive())
@@ -894,6 +895,7 @@ class Chat:
         try:
             handlers: Dict[str, Callable] = {
                 'PING': self._handle_ping,
+                'PONG': self._handle_pong,
                 'PRIVMSG': self._handle_msg,
                 '001': self._handle_ready,
                 'ROOMSTATE': self._handle_room_state,
@@ -1071,6 +1073,9 @@ class Chat:
         self.logger.debug('got PING')
         await self._send_message('PONG ' + parsed['parameters'])
 
+    async def _handle_pong(self, parsed: dict):
+        self.logger.debug('got PONG')
+
     # noinspection PyUnusedLocal
     async def _handle_ready(self, parsed: dict):
         self.logger.debug('got ready event')
@@ -1126,6 +1131,12 @@ class Chat:
         await self._send_message(f'PASS oauth:{await self.twitch.get_refreshed_user_auth_token()}')
         await self._send_message(f'NICK {self.username}')
         self.__startup_complete = True
+
+    async def __task_ping(self):
+        while not self.__connection.closed:
+            if self._ready:
+                await self._send_message('PING')
+            await asyncio.sleep(self.ping_frequency)
 
     def _get_message_bucket(self, channel) -> RateLimitBucket:
         bucket = self._send_buckets.get(channel)
