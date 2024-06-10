@@ -327,7 +327,10 @@ class EventSubWebsocket(EventSubBase):
                 if self._connection.closed:
                     await asyncio.sleep(0.01)
                     continue
-                message: WSMessage = await self._connection.receive()
+                try:
+                    message: WSMessage = await self._connection.receive(timeout=1)
+                except TimeoutError:
+                    continue
                 if message.type == aiohttp.WSMsgType.TEXT:
                     data = json.loads(message.data)
                     _type = data.get('metadata', {}).get('message_type')
