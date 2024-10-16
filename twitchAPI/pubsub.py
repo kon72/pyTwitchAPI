@@ -123,6 +123,7 @@ class PubSub:
         self.__waiting_for_pong: bool = False
         self.__nonce_waiting_confirm: dict = {}
         self._closing = False
+        self._is_reconnecting = False
         self._task_callback = partial(done_task_callback, self.logger)
 
     def start(self) -> None:
@@ -179,6 +180,8 @@ class PubSub:
 
     async def __connect(self, is_startup=False):
         self.logger.debug('connecting...')
+        if not is_startup:
+            self._is_reconnecting = True
         self._closing = False
         if self.__connection is not None and not self.__connection.closed:
             await self.__connection.close()
@@ -201,6 +204,7 @@ class PubSub:
         if not self.__connection.closed and not is_startup:
             uuid = str(get_uuid())
             await self.__send_listen(uuid, list(self.__topics.keys()))
+            self._is_reconnecting = False
 
     async def __send_listen(self, nonce: str, topics: List[str], subscribe: bool = True):
         listen_msg = {
@@ -323,6 +327,9 @@ class PubSub:
                                                self.__handle_unknown)
                         self.__socket_loop.create_task(handler(data))
                 elif message.type == aiohttp.WSMsgType.CLOSED:
+                    if self._is_reconnecting:
+                        self.logger.debug('websocket is closing')
+                        break
                     self.logger.debug('websocket is closing... trying to reestablish connection')
                     try:
                         await self._handle_base_reconnect()
